@@ -412,3 +412,21 @@ async def unban_driver(
     notif.notify_driver_unbanned(admin["sub"], driver_id)
 
     return {"status": "success", "account_status": "pending"}
+
+@router.get("/account-deletion-requests", summary="طلبات حذف الحساب")
+def account_deletion_requests(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    _admin: dict = Depends(require_role("admin")),
+):
+    with db_cursor(dict_cursor=True) as cur:
+        cur.execute(
+            """
+            SELECT user_id, requested_at
+            FROM account_deletion_requests
+            ORDER BY requested_at, user_id
+            LIMIT %s OFFSET %s
+            """,
+            (limit, offset),
+        )
+        return cur.fetchall()

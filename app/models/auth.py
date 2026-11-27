@@ -1,6 +1,7 @@
 """
 Pydantic models للـ Auth
 """
+from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
@@ -67,3 +68,11 @@ class ProfileUpdateRequest(BaseModel):
     @classmethod
     def trim_full_name(cls, value):
         return value.strip() if isinstance(value, str) else value
+
+
+class AccountDeletionRequest(BaseModel):
+    password: str = Field(..., min_length=1, max_length=100)
+
+
+class AccountDeletionStatus(BaseModel):
+    requested_at: datetime | None = None

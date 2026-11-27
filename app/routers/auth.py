@@ -9,7 +9,7 @@ from psycopg2 import errors
 
 from app.core.config import settings
 from app.core.database import db_cursor
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_role
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -18,6 +18,8 @@ from app.core.security import (
     verify_password,
 )
 from app.models.auth import (
+    AccountDeletionRequest,
+    AccountDeletionStatus,
     LoginRequest,
     ProfileUpdateRequest,
     RefreshRequest,
@@ -237,3 +239,39 @@ def update_profile(data: ProfileUpdateRequest, user: dict = Depends(get_current_
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
     return _row_to_user(row)
+
+
+@router.get("/me/deletion-request", response_model=AccountDeletionStatus)
+def get_deletion_request(user: dict = Depends(require_role("rider", "driver"))):
+    with db_cursor(dict_cursor=True) as cur:
+        cur.execute(
+            "SELECT requested_at FROM account_deletion_requests WHERE user_id = %s",
+            (user["sub"],),
+        )
+        row = cur.fetchone()
+    return AccountDeletionStatus(**row) if row else AccountDeletionStatus()
+
+
+@router.post("/me/deletion-request", response_model=AccountDeletionStatus)
+def submit_deletion_request(
+    data: AccountDeletionRequest,
+    user: dict = Depends(require_role("rider", "driver")),
+):
+    with db_cursor(dict_cursor=True) as cur:
+        cur.execute(
+            "SELECT password_hash FROM users WHERE id = %s AND is_active = TRUE",
+            (user["sub"],),
+        )
+        account = cur.fetchone()
+        if not account or not verify_password(data.password, account["password_hash"]):
+            raise HTTPException(status_code=403, detail="Incorrect password")
+        cur.execute(
+            """
+            INSERT INTO account_deletion_requests (user_id) VALUES (%s)
+            ON CONFLICT (user_id) DO UPDATE
+            SET requested_at = account_deletion_requests.requested_at
+            RETURNING requested_at
+            """,
+            (user["sub"],),
+        )
+        return AccountDeletionStatus(**cur.fetchone())

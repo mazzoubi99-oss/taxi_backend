@@ -14,3 +14,10 @@ only an approximate estimate is available.
 
 `PUT /api/auth/me` updates the authenticated user's name. It accepts
 `{"full_name": "Updated name"}` and returns the updated user profile.
+
+Apply `scripts/migrations/001_account_deletion_requests.sql` before deploying the
+account-deletion request endpoints. Operators can list these requests with
+`GET /api/admin/account-deletion-requests` using an administrator session.
+Submitting a request records it for review. Operators must reconcile active trips,
+outstanding wallet balances, and applicable data-retention requirements before
+processing requests.
