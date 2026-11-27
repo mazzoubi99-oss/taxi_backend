@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from starlette.concurrency import run_in_threadpool
 
 from app.core.database import db_cursor
 from app.core.deps import get_current_user, require_role
@@ -38,7 +39,7 @@ router = APIRouter()
     response_model=TripEstimateResponse,
     summary="تقدير السعر قبل الطلب",
 )
-async def estimate(
+def estimate(
     data: TripEstimateRequest,
     _user: dict = Depends(get_current_user),
 ):
@@ -55,6 +56,7 @@ async def estimate(
         duration_seconds=result["duration_seconds"],
         price=result["price"],
         breakdown=result["breakdown"],
+        route=result["route"],
     )
 
 
@@ -70,7 +72,12 @@ async def request_trip(
     data: TripRequestCreate,
     user: dict = Depends(require_role("rider")),
 ):
+    estimate = await run_in_threadpool(
+        pricing.estimate_trip, data.pickup_lat, data.pickup_lng,
+        data.dropoff_lat, data.dropoff_lng, data.city, data.car_type,
+    )
     result = trip_service.create_trip(
+        estimate=estimate,
         rider_id=user["sub"],
         pickup_lat=data.pickup_lat,
         pickup_lng=data.pickup_lng,
@@ -162,6 +169,8 @@ async def get_trip(trip_id: str, user: dict = Depends(get_current_user)):
         rider_rating=row.get("rider_rating"),
         driver_rating=row.get("driver_rating"),
         driver_name=row.get("driver_name"),
+        last_driver_location=row.get("last_driver_location"),
+        route=(row.get("price_breakdown") or {}).get("route"),
         driver_phone=row.get("driver_phone") if not is_rider else None,
         car_model=row.get("car_model"),
         car_plate=row.get("car_plate"),

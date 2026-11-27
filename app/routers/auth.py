@@ -19,6 +19,7 @@ from app.core.security import (
 )
 from app.models.auth import (
     LoginRequest,
+    ProfileUpdateRequest,
     RefreshRequest,
     RefreshResponse,
     RegisterRequest,
@@ -218,4 +219,21 @@ async def me(user: dict = Depends(get_current_user)):
     if not row:
         raise HTTPException(status_code=404, detail="المستخدم غير موجود")
 
+    return _row_to_user(row)
+
+@router.put("/me", response_model=UserResponse, summary="تعديل الاسم الشخصي")
+def update_profile(data: ProfileUpdateRequest, user: dict = Depends(get_current_user)):
+    with db_cursor(dict_cursor=True) as cur:
+        cur.execute(
+            """
+            UPDATE users SET full_name = %s
+            WHERE id = %s AND is_active = TRUE
+            RETURNING id, phone, full_name, email, role, is_active, is_verified,
+                      avatar_url, language
+            """,
+            (data.full_name, user["sub"]),
+        )
+        row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
     return _row_to_user(row)

@@ -21,6 +21,7 @@ class TripEstimateResponse(BaseModel):
     duration_seconds: int
     price: float
     breakdown: dict
+    route: Optional[list[list[float]]] = None
 
 
 # ===== Request =====
@@ -92,6 +93,8 @@ class TripDetail(BaseModel):
 
     # معلومات السائق (لو مقبول)
     driver_name: Optional[str] = None
+    last_driver_location: Optional[dict] = None
+    route: Optional[list[list[float]]] = None
     driver_phone: Optional[str] = None
     car_model: Optional[str] = None
     car_plate: Optional[str] = None

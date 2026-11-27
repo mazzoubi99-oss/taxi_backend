@@ -7,6 +7,7 @@ from typing import Optional
 
 from app.core.database import db_cursor
 from app.services import settings
+from app.services.road_route import driving_route
 
 logger = logging.getLogger(__name__)
 
@@ -197,8 +198,13 @@ def estimate_trip(
     car_type: Optional[str] = None,
 ) -> dict:
     """تقدير كامل لرحلة (مسافة + وقت + سعر)."""
-    distance = haversine_meters(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
-    duration = estimate_duration_seconds(distance)
+    route = driving_route(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
+    if route:
+        distance, duration, geometry = route
+    else:
+        distance = haversine_meters(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
+        duration = estimate_duration_seconds(distance)
+        geometry = None
     breakdown = calculate_price(distance, duration, city=city, car_type=car_type)
 
     return {
@@ -206,4 +212,5 @@ def estimate_trip(
         "duration_seconds": duration,
         "price": breakdown["price"],
         "breakdown": breakdown,
+        "route": geometry,
     }

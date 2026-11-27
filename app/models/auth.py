@@ -59,3 +59,11 @@ class RefreshResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
+
+class ProfileUpdateRequest(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=100)
+
+    @field_validator("full_name", mode="before")
+    @classmethod
+    def trim_full_name(cls, value):
+        return value.strip() if isinstance(value, str) else value

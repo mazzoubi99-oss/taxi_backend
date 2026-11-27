@@ -30,6 +30,7 @@ def create_trip(
     promo_code: Optional[str] = None,
     rider_note: Optional[str] = None,
     city: Optional[str] = None,
+    estimate: Optional[dict] = None,
 ) -> dict:
     """ينشئ رحلة جديدة + يحسب السعر + يرسل العروض للسائقين."""
     # 1) تحقق من الرحلات النشطة للراكب
@@ -53,13 +54,18 @@ def create_trip(
         }
 
     # 2) حساب السعر
-    distance_m = pricing.haversine_meters(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
-    duration_s = pricing.estimate_duration_seconds(distance_m)
-
-    breakdown = pricing.calculate_price(
-        distance_m, duration_s, city=city, car_type=car_type,
+    estimate = estimate or pricing.estimate_trip(
+        pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, city=city, car_type=car_type,
     )
-    price_estimate = breakdown["price"]
+    distance_m = estimate["distance_meters"]
+    duration_s = estimate["duration_seconds"]
+    price_estimate = estimate["price"]
+    breakdown = {
+        **estimate["breakdown"],
+        "car_type": car_type,
+        "city": city,
+        "route": estimate["route"],
+    }
 
     # 3) promo
     promo_id = None
@@ -538,7 +544,7 @@ def complete_trip(trip_id: str, driver_id: str) -> dict:
                    pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
                    price_estimate, payment_method,
                    promo_code_id, discount_amount,
-                   distance_meters, duration_seconds
+                   distance_meters, duration_seconds, price_breakdown
             FROM trips WHERE id = %s
             """,
             (trip_id,),
@@ -556,9 +562,9 @@ def complete_trip(trip_id: str, driver_id: str) -> dict:
         cur.execute(
             """
             SELECT COUNT(*) AS c, MIN(recorded_at) AS first_at, MAX(recorded_at) AS last_at
-            FROM trip_locations WHERE trip_id = %s
+            FROM trip_locations WHERE trip_id = %s AND recorded_at >= %s
             """,
-            (trip_id,),
+            (trip_id, trip["started_at"]),
         )
         locs = cur.fetchone()
 
@@ -572,11 +578,11 @@ def complete_trip(trip_id: str, driver_id: str) -> dict:
                 SELECT COALESCE(SUM(ST_Distance(lag_loc, location)), 0) AS total_m
                 FROM (
                     SELECT location, LAG(location) OVER (ORDER BY recorded_at) AS lag_loc
-                    FROM trip_locations WHERE trip_id = %s
+                    FROM trip_locations WHERE trip_id = %s AND recorded_at >= %s
                 ) sub
                 WHERE lag_loc IS NOT NULL
                 """,
-                (trip_id,),
+                (trip_id, trip["started_at"]),
             )
             r = cur.fetchone()
             actual_distance = int(r["total_m"]) if r and r["total_m"] else None
@@ -584,7 +590,11 @@ def complete_trip(trip_id: str, driver_id: str) -> dict:
         final_distance = actual_distance or trip["distance_meters"] or 0
         final_duration = actual_duration or trip["duration_seconds"] or 0
 
-        breakdown = pricing.calculate_price(final_distance, final_duration)
+        original_pricing = trip["price_breakdown"] or {}
+        breakdown = pricing.calculate_price(
+            final_distance, final_duration,
+            city=original_pricing.get("city"), car_type=original_pricing.get("car_type"),
+        )
         price_final = breakdown["price"]
 
         # promo — إعادة حساب على السعر النهائي
